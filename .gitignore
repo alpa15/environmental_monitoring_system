@@ -1,0 +1,12 @@
+# Cache
+/backend/__pycache__
+/backend/data_load/__pycache__
+
+# Config folder
+/backend/config
+
+# Data folder
+/backend/data
+
+# Virtual Environment
+/venv
