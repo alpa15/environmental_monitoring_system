@@ -1,12 +1,14 @@
 # Cache
-/backend/__pycache__
-/backend/data_load/__pycache__
+/src/eo/__pycache__
+/src/eo/ee/__pycache__
+/src/eo/torchgeo/__pycache__
+/src/eo/data_load/__pycache__
 
 # Config folder
-/backend/config
+/src/eo/config
 
 # Data folder
-/backend/data
+/src/eo/data
 
 # Virtual Environment
 /venv
