@@ -1,14 +1,14 @@
 # Cache
-/src/eo/__pycache__
-/src/eo/ee/__pycache__
-/src/eo/torchgeo/__pycache__
-/src/eo/data_load/__pycache__
+__pycache__/
 
 # Config folder
 /src/eo/config
 
 # Data folder
 /src/eo/data
+
+# Debug files
+.vscode/
 
 # Virtual Environment
 /venv

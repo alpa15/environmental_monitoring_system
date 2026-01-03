@@ -12,8 +12,9 @@ def inspect_dataset(
     n: int = 3,
     chip_size: int = 256,
     seed: int = 0,
-    out_dir: Path = Path("eo/data/torchgeo"),
+    out_dir: Path = Path("eo") / "data" / "torchgeo",
     download: bool = False,
+    use_xarray: bool = False,
 ) -> None:
     """
     Load a dataset and visualize the first N samples (for debugging/learning).
@@ -41,7 +42,7 @@ def inspect_dataset(
 
     # Determine the actual root directory
     if root is None:
-        root = Path("eo/data") / "torchgeo" / dataset_name
+        root = Path("eo") / "data" / "torchgeo" / dataset_name
     else:
         root = Path(root)
 
@@ -68,6 +69,7 @@ def inspect_dataset(
             sample_index=i,
             chip_size=chip_size,
             seed=seed,
+            use_xarray=use_xarray,
         )
 
 

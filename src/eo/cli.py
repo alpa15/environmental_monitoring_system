@@ -29,14 +29,14 @@ def _ensure_dir(path: Path) -> Path:
 
 
 @ee_app.command("single-year-analysis")
-def ee_year(
+def single_year_analysis(
     min_lon: float = typer.Option(..., help="AOI min longitude."),
     min_lat: float = typer.Option(..., help="AOI min latitude."),
     max_lon: float = typer.Option(..., help="AOI max longitude."),
     max_lat: float = typer.Option(..., help="AOI max latitude."),
     year: int = typer.Option(..., help="Year to analyze."),
     cloud_cover: int = typer.Option(30, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
-    out_dir: Path = typer.Option(Path("eo/data/ee/outputs"), help="Output directory."),
+    out_dir: Path = typer.Option(Path("eo") / "data" / "ee" / "outputs", help="Output directory."),
     save_plot: bool = typer.Option(True, help="Save the plot to disk."),
     export_drive: bool = typer.Option(False, help="Export rasters to Google Drive."),
 ) -> None:
@@ -66,7 +66,7 @@ def ee_two_year_comparison(
     year_a: int = typer.Option(..., help="Start year."),
     year_b: int = typer.Option(..., help="End year."),
     cloud_cover: int = typer.Option(30, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
-    out_dir: Path = typer.Option(Path("eo/data/ee/outputs"), help="Output directory."),
+    out_dir: Path = typer.Option(Path("eo") / "data" / "ee" / "outputs", help="Output directory."),
     save_plot: bool = typer.Option(True, help="Save the comparison plot to disk."),
 ) -> None:
     """
@@ -87,14 +87,15 @@ def ee_two_year_comparison(
 
 
 @tg_app.command("inspect")
-def tg_inspect(
+def torchgeo_inspect(
     dataset: str = typer.Option(..., help="Dataset name: ChaBuD, MMFlood, DigitalTyphoon, ADVANCE."),
     root: Optional[Path] = typer.Option(None, help="Dataset root directory."),
     n: int = typer.Option(3, help="Number of samples to preview."),
     chip_size: int = typer.Option(256, help="Chip size for GeoDatasets (pixels)."),
     seed: int = typer.Option(0, help="Seed for reproducible sampling."),
-    out_dir: Path = typer.Option(Path("eo/data/torchgeo"), help="Output directory."),
+    out_dir: Path = typer.Option(Path("eo") / "data" / "torchgeo", help="Output directory."),
     download: bool = typer.Option(False, help="Force download dataset (even if exists)."),
+    xarray: bool = typer.Option(True, help="Use xarray/rioxarray for samples."),
 ) -> None:
     """
     Inspect/preview samples from a TorchGeo dataset.
@@ -111,6 +112,7 @@ def tg_inspect(
         seed=seed,
         out_dir=out_dir,
         download=download,
+        use_xarray=xarray,
     )
     typer.echo(f"Done -> {out_dir}")
 

@@ -5,7 +5,7 @@ A personal Earth Observation (EO) project to experiment with environmental monit
 - Disaster-focused benchmark datasets via TorchGeo (ChaBuD, MMFlood, DigitalTyphoon, ADVANCE)
 - An offline **CLI-first** pipeline and a separate **Dash** dashboard
 
-> Design goal: keep compute-heavy tasks (downloads, GEE queries, preprocessing, future training/inference) outside the dashboard and run them via CLI. Typer supports command groups (subcommands) for this structure. [web:210]
+> Design goal: keep compute-heavy tasks (downloads, GEE queries, preprocessing, future training/inference) outside the dashboard and run them via CLI. Typer supports command groups (subcommands) for this structure.
 
 ---
 
@@ -100,7 +100,7 @@ PROJECT_ID = "your-gcp-project-id"
 
 ## Earth Engine authentication
 
-Earth Engine requires authentication and initialization; once authenticated, `ee.Initialize(project=...)` can reuse stored credentials and will only need re-auth if credentials are expired/invalid. [web:295]
+Earth Engine requires authentication and initialization; once authenticated, `ee.Initialize(project=...)` can reuse stored credentials and will only need re-auth if credentials are expired/invalid.
 
 Typical local setup:
 
@@ -108,87 +108,17 @@ Typical local setup:
 earthengine authenticate
 ```
 
-If you implement an “authenticate-if-needed” pattern inside `initialize_ee()`, you can attempt `ee.Initialize(...)` first and call `ee.Authenticate()` only when initialization fails (and optionally `force=True` to re-create credentials). [web:295]
+If you implement an “authenticate-if-needed” pattern inside `initialize_ee()`, you can attempt `ee.Initialize(...)` first and call `ee.Authenticate()` only when initialization fails (and optionally `force=True` to re-create credentials).
 
 ---
 
-## CLI usage
+ ## CLI usage
+ 
+ The CLI is implemented with Typer and exposes subcommands such as `ee` and `torchgeo` (command groups).
 
-The CLI is implemented with Typer and exposes subcommands such as `ee` and `torchgeo` (command groups). [web:210]
+ For a more detailed CLI reference (commands, options, conventions), see [`docs/cli.md`](docs/cli.md).
 
-### Discover commands
-
-```bash
-python -m eo.cli --help
-python -m eo.cli ee --help
-python -m eo.cli ee year --help
-python -m eo.cli ee delta --help
-python -m eo.cli torchgeo --help
-python -m eo.cli torchgeo inspect --help
-```
-
-
-### EE: single-year analysis
-
-Runs:
-
-1) GEE initialization
-2) Load least-cloudy Sentinel‑2 image in the given year range
-3) Plot RGB/NIR/NDVI/NDWI
-4) Optionally export rasters to Google Drive
-
-Example:
-
-```bash
-python -m eo.cli ee year \
-  --min-lon 8.35 --min-lat 45.85 --max-lon 8.45 --max-lat 45.92 \
-  --year 2024 \
-  --cloud-cover 30 \
-  --out-dir data/ee/outputs \
-  --save-plot
-```
-
-Optional: export to Drive
-
-```bash
-python -m eo.cli ee year \
-  --min-lon 8.35 --min-lat 45.85 --max-lon 8.45 --max-lat 45.92 \
-  --year 2024 \
-  --export-drive
-```
-
-
-### EE: two-year comparison (visual)
-
-Produces a side-by-side comparison plot (RGB/NIR/NDVI/NDWI) for two years.
-
-```bash
-python -m eo.cli ee delta \
-  --min-lon 8.35 --min-lat 45.85 --max-lon 8.45 --max-lat 45.92 \
-  --year-a 2019 --year-b 2024 \
-  --cloud-cover 30 \
-  --out-dir data/ee/outputs \
-  --save-plot
-```
-
-Note: at the moment this is a visualization-based comparison; explicit delta rasters
-(e.g., NDVI_year_b - NDVI_year_a) can be added as a next step.
-
-### TorchGeo: dataset inspect
-
-Downloads (if missing), loads, samples, and visualizes `n` samples.
-
-```bash
-python -m eo.cli torchgeo inspect \
-  --dataset MMFlood \
-  --n 3 \
-  --chip-size 256 \
-  --seed 0 \
-  --out-dir data/torchgeo/inspect \
-  --download
-```
-
-Notes:
+## Notes:
 
 - If `--root` is not provided, datasets default to `data/torchgeo/<dataset_name>`.
 - For GeoDatasets, sampling is performed via TorchGeo samplers (e.g., `RandomGeoSampler`)
@@ -240,8 +170,8 @@ This directory can be excluded from version control (add `data/` to `.gitignore`
 
 ### Earth Engine errors (auth/init)
 
-- Authenticate with `earthengine authenticate` and verify `PROJECT_ID`. [web:295]
-- If credentials are stale, rerun authentication (optionally with `--force`) and retry initialization. [web:295]
+- Authenticate with `earthengine authenticate` and verify `PROJECT_ID`.
+- If credentials are stale, rerun authentication (optionally with `--force`) and retry initialization.
 
 
 ### TorchGeo sampling looks “random”

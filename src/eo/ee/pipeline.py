@@ -25,7 +25,7 @@ def run_single_year_analysis(
     bbox: BBox,
     year: int,
     cloud_cover: int = 30,
-    out_dir: Path = Path("eo/data/ee/outputs"),
+    out_dir: Path = Path("eo") / "data" / "ee" / "outputs",
     save_plot: bool = True,
     export_drive: bool = False,
 ) -> None:
@@ -80,7 +80,7 @@ def run_two_year_comparison(
     year_a: int,
     year_b: int,
     cloud_cover: int = 30,
-    out_dir: Path = Path("eo/data/ee/outputs"),
+    out_dir: Path = Path("eo") / "data" / "ee" / "outputs",
     save_plot: bool = True,
 ) -> None:
     """

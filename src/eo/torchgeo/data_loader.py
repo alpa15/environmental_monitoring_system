@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
+import xarray as xr
+import rioxarray  # noqa: F401 (attiva accessor .rio)
+from rasterio.transform import from_bounds
+
 from torch.utils.data import DataLoader
 from torchgeo.datasets import ADVANCE, ChaBuD, DigitalTyphoon, MMFlood
 from torchgeo.datasets.utils import stack_samples
@@ -14,6 +19,12 @@ from torchgeo.samplers import RandomGeoSampler
 _DATASETS = {
     "ChaBuD": ChaBuD,
     "MMFlood": MMFlood,
+    "DigitalTyphoon": DigitalTyphoon,
+    "ADVANCE": ADVANCE,
+}
+
+# TODO: remove when these datasets are supported in dev
+_NOT_DEV_DATASETS = {
     "DigitalTyphoon": DigitalTyphoon,
     "ADVANCE": ADVANCE,
 }
@@ -39,10 +50,14 @@ def load_dataset(
     """
     if dataset_name not in _DATASETS:
         raise ValueError(f"Unknown dataset_name={dataset_name}. Choose one of: {list(_DATASETS.keys())}")
+    
+    # TODO: remove when these datasets are supported in dev
+    if dataset_name in _NOT_DEV_DATASETS:
+        raise ValueError(f"Warning: Dataset '{dataset_name}' cannot be used yet.")
 
     if root is None:
-        root = Path("data") / "torchgeo" / dataset_name
-
+        # Allineato al resto del progetto (pipeline/cli)
+        root = Path("eo") / "data" / "torchgeo" / dataset_name
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
 
@@ -54,53 +69,121 @@ def load_dataset(
     )
 
 
+def _as_numpy(x: Any) -> np.ndarray:
+    if isinstance(x, xr.DataArray):
+        return np.asarray(x.values)
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
+
+def _to_xarray_dataarray(
+    arr: Any,
+    name: str,
+    bbox: Any = None,
+    crs: Any = None,
+) -> xr.DataArray:
+    data = _as_numpy(arr)
+
+    # Normalizza shape in modo “geospatial friendly”
+    # 2D -> (y, x)
+    # 3D -> assume (band, y, x) se band piccolo, altrimenti (y, x, band)
+    dims: Tuple[str, ...]
+    if data.ndim == 2:
+        dims = ("y", "x")
+    elif data.ndim == 3:
+        if data.shape[0] <= 32:  # euristica: band-first
+            dims = ("band", "y", "x")
+        else:  # likely HWC
+            data = np.transpose(data, (2, 0, 1))
+            dims = ("band", "y", "x")
+    elif data.ndim == 4:
+        # es: ChaBuD pre/post -> (time, band, y, x) oppure (time, y, x, band)
+        if data.shape[1] <= 32:
+            dims = ("time", "band", "y", "x")
+        else:
+            data = np.transpose(data, (0, 3, 1, 2))
+            dims = ("time", "band", "y", "x")
+    else:
+        # fallback: lascia dims generiche
+        dims = tuple(f"dim_{i}" for i in range(data.ndim))
+
+    da = xr.DataArray(data, dims=dims, name=name)
+
+    # Se ho bbox + crs e ho y/x, costruisco coordinate e metadati rio
+    if bbox is not None and ("y" in da.dims and "x" in da.dims):
+        # TorchGeo BoundingBox tipicamente ha minx/maxx/miny/maxy
+        minx, maxx = float(bbox.minx), float(bbox.maxx)
+        miny, maxy = float(bbox.miny), float(bbox.maxy)
+
+        height = int(da.sizes["y"])
+        width = int(da.sizes["x"])
+
+        x = np.linspace(minx, maxx, width)
+        y = np.linspace(maxy, miny, height)  # y decrescente (north->south)
+        da = da.assign_coords(x=("x", x), y=("y", y))
+
+        transform = from_bounds(minx, miny, maxx, maxy, width, height)
+        if crs is not None:
+            da = da.rio.write_crs(crs, inplace=False)
+        da = da.rio.write_transform(transform, inplace=False)
+
+    return da
+
+
+def _sample_to_xdataset(sample: Dict[str, Any]) -> xr.Dataset:
+    # TorchGeo spesso include bbox/crs
+    bbox = sample.get("bbox", None)
+    crs = sample.get("crs", None)
+
+    data_vars = {}
+    for key in ["image", "mask"]:
+        if key in sample and sample[key] is not None:
+            data_vars[key] = _to_xarray_dataarray(sample[key], name=key, bbox=bbox, crs=crs)
+
+    # Metti il resto come attrs (serializzando in modo semplice)
+    attrs = {}
+    for k, v in sample.items():
+        if k in data_vars:
+            continue
+        # prova a rendere serializzabile
+        if torch.is_tensor(v):
+            attrs[k] = str(tuple(v.shape))
+        else:
+            attrs[k] = str(v)
+
+    ds = xr.Dataset(data_vars=data_vars, attrs=attrs)
+    return ds
+
+
 def get_sample(
     dataset,
     sample_index: int = 0,
     chip_size: int = 256,
     seed: int = 0,
-) -> Dict[str, Any]:
-    """
-    Return a single sample as a dict.
-
-    Behavior:
-        - If the dataset supports direct indexing (map-style), returns dataset[sample_index].
-        - Otherwise, samples one geospatial chip with RandomGeoSampler and returns the batch item.
-
-    Notes:
-        For GeoDatasets the sample_index is used only to make sampling reproducible by
-        setting the generator seed to (seed + sample_index).
-
-    Args:
-        dataset: TorchGeo dataset object.
-        sample_index: Index for map-style datasets or deterministic sampling step for GeoDatasets.
-        chip_size: Chip size in pixels for RandomGeoSampler.
-        seed: Base seed for reproducible sampling.
-
-    Returns:
-        A dictionary with at least "image" and possibly "mask"/"crs"/etc. depending on dataset.
-    """
-    # 1) Map-style datasets (e.g., ChaBuD is usually directly indexable)
+    return_xarray: bool = True,
+) -> Union[Dict[str, Any], xr.Dataset]:
+    # 1) Map-style
     try:
         sample = dataset[sample_index]
-        if isinstance(sample, dict):
-            return sample
+        return sample
     except Exception:
         pass
 
-    # 2) GeoDatasets: sample a single chip
+    # 2) GeoDatasets: chip sampling
     g = torch.Generator().manual_seed(seed + int(sample_index))
     sampler = RandomGeoSampler(dataset, size=chip_size, length=1, generator=g)
     loader = DataLoader(dataset, sampler=sampler, batch_size=1, collate_fn=stack_samples)
-
     batch = next(iter(loader))
+
     sample_out: Dict[str, Any] = {}
     for k, v in batch.items():
         sample_out[k] = v[0] if torch.is_tensor(v) and v.ndim >= 1 else v
-    return sample_out
+
+    return _sample_to_xdataset(sample_out) if return_xarray else sample_out
 
 
-def _normalize_to_hwc(img: torch.Tensor) -> torch.Tensor:
+def _normalize_hwc(img_hwc: np.ndarray) -> np.ndarray:
     """
     Convert (C,H,W) -> (H,W,C) and normalize to [0, 1] for plotting.
 
@@ -110,14 +193,10 @@ def _normalize_to_hwc(img: torch.Tensor) -> torch.Tensor:
     Returns:
         Float tensor in HWC format and [0,1] range.
     """
-    img = img.detach().cpu()
-    if img.ndim == 3:
-        img = img.permute(1, 2, 0)
-
-    img_min = float(img.min())
-    img_max = float(img.max())
-    denom = (img_max - img_min) if (img_max - img_min) > 1e-8 else 1.0
-    return (img - img_min) / denom
+    img = img_hwc.astype(np.float32)
+    mn, mx = float(np.nanmin(img)), float(np.nanmax(img))
+    denom = (mx - mn) if (mx - mn) > 1e-8 else 1.0
+    return (img - mn) / denom
 
 
 def visualize_sample(
@@ -127,39 +206,89 @@ def visualize_sample(
     chip_size: int = 256,
     seed: int = 0,
     figsize: Tuple[int, int] = (15, 5),
+    use_xarray: bool = True,
 ) -> None:
-    """
-    Visualize a sample from one of the supported datasets.
+    sample = get_sample(
+        dataset,
+        sample_index=sample_index,
+        chip_size=chip_size,
+        seed=seed,
+        return_xarray=use_xarray,
+    )
 
-    Args:
-        dataset: TorchGeo dataset object.
-        dataset_name: Dataset name used for selecting a specific visualization path.
-        sample_index: Sample index (map-style) or deterministic sampling step (GeoDataset).
-        chip_size: Chip size used for GeoDatasets.
-        seed: Base seed for deterministic sampling.
-        figsize: Matplotlib figure size.
-    """
-    sample = get_sample(dataset, sample_index=sample_index, chip_size=chip_size, seed=seed)
+    # Estrai image/mask in modo uniforme
+    img = sample.get("image")
+    mask = sample.get("mask")
+
+    # --- helpers ---
+    def _axes_list(axs):
+        # garantisce lista di matplotlib.axes.Axes
+        return list(np.atleast_1d(axs).ravel())
+    
+    def _to_numpy(x: Any) -> np.ndarray:
+        if x is None:
+            return None
+        if isinstance(x, xr.DataArray):
+            return np.asarray(x.values)
+        if torch.is_tensor(x):
+            return x.detach().cpu().numpy()
+        return np.asarray(x)
+
+    def _as_chw(arr: np.ndarray) -> np.ndarray:
+        # vogliamo CHW per semplicità
+        if arr.ndim == 2:
+            return arr[None, ...]  # 1,H,W
+        if arr.ndim == 3:
+            # euristica: se ultimo asse è piccolo (<=32) potrebbe essere HWC
+            if arr.shape[-1] <= 32 and arr.shape[0] > 32:
+                return np.transpose(arr, (2, 0, 1))
+            return arr  # assume CHW
+        if arr.ndim == 4:
+            # ChaBuD ecc: lascia gestire dal ramo dedicato
+            return arr
+        return arr
+
+    def _norm01(a: np.ndarray) -> np.ndarray:
+        a = a.astype(np.float32)
+        mn, mx = np.nanmin(a), np.nanmax(a)
+        denom = (mx - mn) if (mx - mn) > 1e-8 else 1.0
+        return (a - mn) / denom
+
+    def _mmflood_false_color(chw: np.ndarray) -> np.ndarray:
+        # chw: (2,H,W) -> rgb: (H,W,3)
+        vv = chw[0]  # co-polarization
+        vh = chw[1]  # cross-polarization
+        eps = 1e-8
+        ratio = vv / (vh + eps)
+
+        # stessa logica del plot TorchGeo MMFlood: clip(vv/0.3), clip(vh/0.05), clip(ratio/25) [page:2]
+        vv_n = np.clip(vv / 0.3, 0.0, 1.0)
+        vh_n = np.clip(vh / 0.05, 0.0, 1.0)
+        ratio_n = np.clip(ratio / 25.0, 0.0, 1.0)
+
+        rgb = np.stack([vv_n, vh_n, ratio_n], axis=-1)
+        return rgb
 
     if dataset_name == "ChaBuD":
-        img = sample.get("image")
-        mask = sample.get("mask")
-
         fig, axes = plt.subplots(1, 3, figsize=figsize)
+        axes = _axes_list(axes)
 
-        if img is not None and torch.is_tensor(img) and img.ndim >= 4:
-            pre = _normalize_to_hwc(img[0, :3])
-            post = _normalize_to_hwc(img[1, :3])
-            axes[0].imshow(pre)
+        img_np = _to_numpy(img)
+        if img_np is not None and img_np.ndim >= 4:
+            # atteso: (time, band, H, W) oppure simile
+            pre = img_np[0, :3]
+            post = img_np[1, :3]
+            axes[0].imshow(_norm01(np.transpose(pre, (1, 2, 0))))
+            axes[1].imshow(_norm01(np.transpose(post, (1, 2, 0))))
             axes[0].set_title("Pre-fire (RGB)")
-            axes[1].imshow(post)
             axes[1].set_title("Post-fire (RGB)")
         else:
             axes[0].set_title("Pre-fire (n/a)")
             axes[1].set_title("Post-fire (n/a)")
 
-        if mask is not None and torch.is_tensor(mask):
-            axes[2].imshow(mask.squeeze().cpu(), cmap="Reds")
+        if mask is not None:
+            m = np.squeeze(_to_numpy(mask))
+            axes[2].imshow(m, cmap="Reds")
             axes[2].set_title("Mask")
         else:
             axes[2].set_title("Mask (n/a)")
@@ -169,35 +298,89 @@ def visualize_sample(
         plt.show()
         return
 
-    img = sample.get("image")
-    mask = sample.get("mask")
+    # --- ramo generico (MMFlood incluso) ---
+    img_np = _as_chw(_to_numpy(img)) if img is not None else None
+    mask_np = np.squeeze(_to_numpy(mask)) if mask is not None else None
 
-    fig, axes = plt.subplots(1, 2 if mask is not None else 1, figsize=figsize)
-    if not isinstance(axes, (list, tuple)):
-        axes = [axes]
+    if img_np is None:
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        ax.set_title(f"{dataset_name} image (n/a)")
+        ax.axis("off")
+        plt.show()
+        return
 
-    if img is not None and torch.is_tensor(img):
-        if img.ndim == 3 and img.shape[0] >= 3:
-            vis = _normalize_to_hwc(img[:3])
-            axes[0].imshow(vis)
-        elif img.ndim == 3 and img.shape[0] == 2:
-            vis = _normalize_to_hwc(img[:1]).squeeze(-1)
-            axes[0].imshow(vis, cmap="gray")
-        else:
-            vis = _normalize_to_hwc(img)
-            if vis.ndim == 2:
-                axes[0].imshow(vis, cmap="gray")
-            else:
-                axes[0].imshow(vis)
-        axes[0].set_title(f"{dataset_name} image")
+    # quante bande?
+    if img_np.ndim == 3:
+        n_bands = img_np.shape[0]
     else:
-        axes[0].set_title(f"{dataset_name} image (n/a)")
+        n_bands = 1
 
-    axes[0].axis("off")
+    # Decide layout pannelli
+    if dataset_name == "MMFlood" and n_bands == 2:
+        ncols = 2 if mask_np is not None else 1
+        fig, axes = plt.subplots(1, ncols, figsize=figsize)
+        axes = _axes_list(axes)
 
-    if mask is not None and torch.is_tensor(mask):
-        axes[1].imshow(mask.squeeze().cpu(), cmap="Blues")
-        axes[1].set_title("Mask")
+        rgb = _mmflood_false_color(img_np)
+        axes[0].imshow(rgb)
+        axes[0].set_title("MMFlood false color (S1 VV/VH/ratio)")
+        axes[0].axis("off")
+
+        if mask_np is not None:
+            # TorchGeo: ignore_index=255 da ignorare (spesso conviene metterlo a 0 in preview) [page:2]
+            mask_vis = mask_np.copy()
+            mask_vis[mask_vis == 255] = 0
+            axes[1].imshow(mask_vis, cmap="gray")
+            axes[1].set_title("Mask")
+            axes[1].axis("off")
+
+        plt.show()
+        return
+
+    # Fallback generalista
+    if n_bands >= 3:
+        rgb = np.transpose(img_np[:3], (1, 2, 0))
+        fig, axes = plt.subplots(1, 2 if mask_np is not None else 1, figsize=figsize)
+        axes = _axes_list(axes)
+        axes[0].imshow(_norm01(rgb))
+        axes[0].set_title(f"{dataset_name} RGB (bands 0-2)")
+        axes[0].axis("off")
+        if mask_np is not None:
+            axes[1].imshow(mask_np, cmap="Blues")
+            axes[1].set_title("Mask")
+            axes[1].axis("off")
+        plt.show()
+        return
+
+    if n_bands == 2:
+        ncols = 3 if mask_np is not None else 2
+        fig, axes = plt.subplots(1, ncols, figsize=figsize)
+        axes = _axes_list(axes)
+
+        axes[0].imshow(_norm01(img_np[0]), cmap="gray")
+        axes[0].set_title(f"{dataset_name} band 0")
+        axes[0].axis("off")
+
+        axes[1].imshow(_norm01(img_np[1]), cmap="gray")
+        axes[1].set_title(f"{dataset_name} band 1")
         axes[1].axis("off")
 
+        if mask_np is not None:
+            axes[2].imshow(mask_np, cmap="Blues")
+            axes[2].set_title("Mask")
+            axes[2].axis("off")
+
+        plt.show()
+        return
+
+    # n_bands == 1
+    fig, axes = plt.subplots(1, 2 if mask_np is not None else 1, figsize=figsize)
+    axes = _axes_list(axes)
+    axes[0].imshow(_norm01(np.squeeze(img_np)), cmap="gray")
+    axes[0].set_title(f"{dataset_name} band 0")
+    axes[0].axis("off")
+    if mask_np is not None:
+        axes[1].imshow(mask_np, cmap="Blues")
+        axes[1].set_title("Mask")
+        axes[1].axis("off")
     plt.show()
