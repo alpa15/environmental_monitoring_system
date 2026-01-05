@@ -79,7 +79,8 @@ def load_sentinel_data(
     end_lon: float,
     start_year: int,
     end_year: int,
-    cloud_cover: int = 30,
+    season: str = "summer",
+    cloud_cover: int = 50,
 ) -> Tuple[Optional[ee.Image], Optional[ee.Geometry], int]:
     """
     Load a cloud-minimized Sentinel-2 SR image for a given AOI and year range.
@@ -102,10 +103,27 @@ def load_sentinel_data(
     """
     bounds = ee.Geometry.Rectangle([start_lon, start_lat, end_lon, end_lat])
 
+    # Date range for the season
+    match season.lower():
+        case "spring":
+            start_date = f"{start_year}-03-01"
+            end_date = f"{end_year}-05-31"
+        case "summer":
+            start_date = f"{start_year}-06-01"
+            end_date = f"{end_year}-08-31"
+        case "autumn":
+            start_date = f"{start_year}-09-01"
+            end_date = f"{end_year}-11-30"
+        case "winter":
+            start_date = f"{start_year}-01-01"
+            end_date = f"{end_year}-02-28"
+        case _:
+            raise ValueError("Invalid season. Please choose from 'spring', 'summer', 'autumn', or 'winter'.")
+
     s2_collection = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
         .filterBounds(bounds)
-        .filterDate(f"{start_year}-01-01", f"{end_year}-12-31")
+        .filterDate(start_date, end_date)
         .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_cover))
     )
 
@@ -144,6 +162,7 @@ def _legend_text() -> str:
 def visualize_single_day(
     image: ee.Image,
     bounds: ee.Geometry,
+    show_plot: bool = False,
     save_output: bool = False,
     output_path: Optional[Path] = None,
 ) -> None:
@@ -153,6 +172,7 @@ def visualize_single_day(
     Args:
         image: ee.Image containing B4/B3/B2/B8 + NDVI + NDWI.
         bounds: ee.Geometry used for ee_to_numpy extraction.
+        show_plot: If True, display the plot on screen.
         save_output: If True, save the figure to disk.
         output_path: Optional explicit output filename (PNG). If None and save_output is True,
             a default name is used in the current working directory.
@@ -207,7 +227,9 @@ def visualize_single_day(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=250)
 
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close(fig)
 
 
 def visualize_comparison(
@@ -216,6 +238,7 @@ def visualize_comparison(
     bounds: ee.Geometry,
     start_year: int,
     end_year: int,
+    show_plot: bool = False,
     save_output: bool = False,
     output_path: Optional[Path] = None,
 ) -> None:
@@ -228,6 +251,7 @@ def visualize_comparison(
         bounds: ee.Geometry used for ee_to_numpy extraction.
         start_year: Label for the first year.
         end_year: Label for the second year.
+        show_plot: If True, display the plot on screen.
         save_output: If True, save the figure to disk.
         output_path: Optional explicit output filename (PNG). If None and save_output is True,
             a default name is used in the current working directory.
@@ -284,7 +308,9 @@ def visualize_comparison(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=250)
 
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close(fig)
 
 
 def export_to_drive(image: ee.Image, bounds: ee.Geometry, folder: str = "GEE_Analysis") -> None:

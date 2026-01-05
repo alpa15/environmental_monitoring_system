@@ -77,7 +77,7 @@ python -m eo.cli ee single-year-analysis --min-lon 12.45 --min-lat 41.85 --max-l
 
 Key options:
 
-- `--cloud-cover`: maximum `CLOUDY_PIXEL_PERCENTAGE` filter (default: 30).
+- `--cloud-cover`: maximum `CLOUDY_PIXEL_PERCENTAGE` filter (default: 50).
 - `--save-plot`: whether to save plots to disk (default: `True`).
 - `--export-drive`: export rasters to Google Drive (default: `False`).
 

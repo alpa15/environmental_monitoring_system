@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
+import logging
 
 from eo.ee.pipeline import BBox as EEBBox
 from eo.ee import pipeline as ee_pipeline
@@ -35,8 +36,10 @@ def single_year_analysis(
     max_lon: float = typer.Option(..., help="AOI max longitude."),
     max_lat: float = typer.Option(..., help="AOI max latitude."),
     year: int = typer.Option(..., help="Year to analyze."),
-    cloud_cover: int = typer.Option(30, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
+    season: str = typer.Option("summer", help="Season to analyze: spring, summer, autumn, winter."),
+    cloud_cover: int = typer.Option(50, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
     out_dir: Path = typer.Option(Path("eo") / "data" / "ee" / "outputs", help="Output directory."),
+    show_plot: bool = typer.Option(False, help="Show the plot on screen."),
     save_plot: bool = typer.Option(True, help="Save the plot to disk."),
     export_drive: bool = typer.Option(False, help="Export rasters to Google Drive."),
 ) -> None:
@@ -49,8 +52,10 @@ def single_year_analysis(
     ee_pipeline.run_single_year_analysis(
         bbox=bbox,
         year=year,
+        season=season,
         cloud_cover=cloud_cover,
         out_dir=out_dir,
+        show_plot=show_plot,
         save_plot=save_plot,
         export_drive=export_drive,
     )
@@ -65,8 +70,10 @@ def ee_two_year_comparison(
     max_lat: float = typer.Option(..., help="AOI max latitude."),
     year_a: int = typer.Option(..., help="Start year."),
     year_b: int = typer.Option(..., help="End year."),
-    cloud_cover: int = typer.Option(30, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
+    season: str = typer.Option("summer", help="Season to analyze: spring, summer, autumn, winter."),
+    cloud_cover: int = typer.Option(50, help="Max CLOUDY_PIXEL_PERCENTAGE filter."),
     out_dir: Path = typer.Option(Path("eo") / "data" / "ee" / "outputs", help="Output directory."),
+    show_plot: bool = typer.Option(False, help="Show the comparison plot on screen."),
     save_plot: bool = typer.Option(True, help="Save the comparison plot to disk."),
 ) -> None:
     """
@@ -79,8 +86,10 @@ def ee_two_year_comparison(
         bbox=bbox,
         year_a=year_a,
         year_b=year_b,
+        season=season,
         cloud_cover=cloud_cover,
         out_dir=out_dir,
+        show_plot=show_plot,
         save_plot=save_plot,
     )
     typer.echo(f"Done -> {out_dir}")
@@ -119,6 +128,11 @@ def torchgeo_inspect(
 
 def main() -> None:
     """CLI entrypoint."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     app()
 
 
