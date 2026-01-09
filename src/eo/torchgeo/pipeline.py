@@ -69,6 +69,8 @@ def inspect_dataset(
             sample_index=i,
             chip_size=chip_size,
             seed=seed,
+            show_plot=False,
+            save=False,
             use_xarray=use_xarray,
         )
 

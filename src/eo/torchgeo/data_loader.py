@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
+from PIL import Image
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -206,6 +208,8 @@ def visualize_sample(
     chip_size: int = 256,
     seed: int = 0,
     figsize: Tuple[int, int] = (15, 5),
+    show_plot: bool = False,
+    save: bool = False,
     use_xarray: bool = True,
 ) -> None:
     sample = get_sample(
@@ -268,34 +272,53 @@ def visualize_sample(
 
         rgb = np.stack([vv_n, vh_n, ratio_n], axis=-1)
         return rgb
+    
+    def save_image(arr: np.ndarray, out_path: Union[str, Path]) -> None:
+        arr8 = (np.clip(arr, 0, 1) * 255).astype(np.uint8)
+        Image.fromarray(arr8, mode="RGB").save(out_path)
+
+    def save_mask(arr: np.ndarray, out_path: Union[str, Path]) -> None:
+        mask2d = np.squeeze(arr)  # -> (512, 512) [web:272]
+        mask8 = (mask2d.astype(np.uint8) * 255)
+        Image.fromarray(mask8, mode="L").save(out_path)
 
     if dataset_name == "ChaBuD":
-        fig, axes = plt.subplots(1, 3, figsize=figsize)
-        axes = _axes_list(axes)
-
         img_np = _to_numpy(img)
-        if img_np is not None and img_np.ndim >= 4:
-            # atteso: (time, band, H, W) oppure simile
-            pre = img_np[0, :3]
-            post = img_np[1, :3]
-            axes[0].imshow(_norm01(np.transpose(pre, (1, 2, 0))))
-            axes[1].imshow(_norm01(np.transpose(post, (1, 2, 0))))
-            axes[0].set_title("Pre-fire (RGB)")
-            axes[1].set_title("Post-fire (RGB)")
-        else:
-            axes[0].set_title("Pre-fire (n/a)")
-            axes[1].set_title("Post-fire (n/a)")
 
-        if mask is not None:
-            m = np.squeeze(_to_numpy(mask))
-            axes[2].imshow(m, cmap="Reds")
-            axes[2].set_title("Mask")
-        else:
-            axes[2].set_title("Mask (n/a)")
+        ## RGB images pre/post-fire + mask
+        pre = _norm01(np.transpose(img_np[0, 3:0:-1], (1, 2, 0))) # RGB
+        post = _norm01(np.transpose(img_np[1, 3:0:-1], (1, 2, 0))) # RGB
+        mask = np.squeeze(_to_numpy(mask)) if mask is not None else None # MASK
 
-        for ax in axes:
-            ax.axis("off")
-        plt.show()
+        if save:
+            save_image(pre, os.path.join(Path(__file__).resolve().parent.parent, "models", "BIT_CD", "samples", "A", str(sample_index) + ".png"))
+            save_image(post, os.path.join(Path(__file__).resolve().parent.parent, "models", "BIT_CD", "samples", "B", str(sample_index) + ".png"))
+            if mask is not None:
+                save_mask(mask, os.path.join(Path(__file__).resolve().parent.parent, "models", "BIT_CD", "samples", "label", str(sample_index) + ".png"))
+
+        if show_plot:
+            fig, axes = plt.subplots(1, 3, figsize=figsize)
+            axes = _axes_list(axes)
+
+            if img_np is not None and img_np.ndim >= 4:
+                # atteso: (time, band, H, W) oppure simile
+                axes[0].imshow(pre)
+                axes[1].imshow(post)
+                axes[0].set_title("Pre-fire (RGB)")
+                axes[1].set_title("Post-fire (RGB)")
+            else:
+                axes[0].set_title("Pre-fire (n/a)")
+                axes[1].set_title("Post-fire (n/a)")
+
+            if mask is not None:
+                axes[2].imshow(mask, cmap="Reds")
+                axes[2].set_title("Mask")
+            else:
+                axes[2].set_title("Mask (n/a)")
+
+            for ax in axes:
+                ax.axis("off")
+            plt.show()
         return
 
     # --- ramo generico (MMFlood incluso) ---
