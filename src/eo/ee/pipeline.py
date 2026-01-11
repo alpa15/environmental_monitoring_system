@@ -102,7 +102,7 @@ def run_single_year_analysis(
     for key in image_stats.keys():
         stats_df.loc[row_idx, key] = image_stats[key]
 
-    stats_df.to_csv(out_dir / f"stats.csv")
+    stats_df.to_csv(out_dir / f"stats_df.csv")
 
     logging.info("Saved statistics CSV")
 

@@ -6,7 +6,9 @@ from typing import Optional
 import ee
 import geemap
 import numpy as np
-from matplotlib import pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from eo.ee.data_loader import _legend_text
 

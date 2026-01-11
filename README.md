@@ -20,18 +20,48 @@ A personal Earth Observation (EO) project to experiment with environmental monit
 - Sentinel‑2 analysis via Google Earth Engine (GEE)
 - Disaster-focused benchmark datasets via TorchGeo (ChaBuD, MMFlood, DigitalTyphoon, ADVANCE)
 - An offline **CLI-first** pipeline and a separate **Dash** dashboard
-- Transformer-based change detection baseline integrated from **BIT_CD** (Bitemporal Image Transformer) for ChaBuD inference (pretrained weights); training/fine-tuning on ChaBuD is currently not included.
+- Transformer-based change detection baseline integrated from **BIT_CD** (Bitemporal Image Transformer) for ChaBuD inference (pretrained weights).
 
 > Design goal: keep compute-heavy tasks (downloads, GEE queries, preprocessing, future training/inference) outside the dashboard and run them via CLI. Typer supports command groups (subcommands) for this structure.
 
 
 ---
 
+## Dashboard preview
+
+<p align="center">
+  <b>Change Detection — single year</b><br/>
+  <img src="assets/demo/ee_cd_single_year.gif" width="800" alt="Dash dashboard: Single-year Sentinel-2 analysis" />
+</p>
+
+<p align="center">
+  <b>Change Detection — two-year comparison</b><br/>
+  <img src="assets/demo/ee_cd_comparison.gif" width="800" alt="Dash dashboard: Two-year comparison and delta outputs" />
+</p>
+
+
+---
+
 ## Quickstart
 
+### Dashboard Functioning
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows PowerShell
+pip install -r requirements.txt
+
+pip install -e .
+set PYTHONPATH=src
+python -m dashboard.app
+```
+
+
+### Torchgeo Inspect Functioning
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows PowerShell
 pip install -r requirements.txt
 
 pip install -e .
@@ -179,7 +209,10 @@ The dashboard is intentionally kept separate from the CLI and should be run via 
 Example:
 
 ```bash
-python dashboard/app.py
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows PowerShell
+set PYTHONPATH=src
+python -m dashboard.app
 ```
 
 
@@ -195,6 +228,7 @@ data/
     outputs/
       single_year_<year>.png
       comparison_<year_a>_<year_b>.png
+      stats_df.csv
   torchgeo/
     ChaBuD/...
     MMFlood/...
@@ -230,7 +264,8 @@ This directory can be excluded from version control (add `data/` to `.gitignore`
 
 ## Roadmap
 
-- Add dashboard pages.
+- Work on the Torchgeo data usage with DL models.
+- Work on dashboard Torchgeo DL page.
 
 
 ---

@@ -5,8 +5,10 @@ from typing import Optional, Tuple
 
 import ee
 import geemap
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from eo.config.const import PROJECT_ID
 
